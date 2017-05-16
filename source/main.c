@@ -3,7 +3,7 @@
 #include <string.h>
 #include <malloc.h>
 
-#include "structs.h"
+#include "includes.h"
 
 static void* frameBuffer[2] = { NULL, NULL };
 u8 currentFB = 0;
@@ -97,7 +97,7 @@ void Initialise()
 	gInput = GetInput();
 	gPrevInput = gInput;
 	
-	gBoxTransform = GetTransform(0.0f, 0.0f, 0.0f);
+	gBoxTransform = GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f);
 	
 	gTriangle = GetTriangle(
 							 (GetVector(0.0f, 1.0f, 0.0f)),
@@ -106,9 +106,9 @@ void Initialise()
 							);
 							
 	SetTriangleColors(&gTriangle,
-					  GetColor(1.0f, 0.0f, 0.0f, 1.0f),
-					  GetColor(0.0f, 1.0f, 0.0f, 1.0f),
-					  GetColor(0.0f, 0.0f, 1.0f, 1.0f)
+					  CYellow,
+					  CMagenta,
+					  CCyan
 					  );
 }
 
@@ -125,18 +125,19 @@ int main()
 	{
 		GatherInput();
 		 
-		Translate3f32(&gBoxTransform, gInput.stickX * deltaTime, gInput.stickY * deltaTime, 0.0f);
+		Vector dir = GetDirection(&gBoxTransform);
+		Translatev(&gBoxTransform, VectorMulf32(&dir, deltaTime * 5.0f * gInput.stickY));
+		Rotate1f32(&gBoxTransform, gInput.stickX * deltaTime * -180.0f);
 		
 		GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
 	
 		guMtxIdentity(model);
-		guMtxTransApply(model, model, gBoxTransform.x, gBoxTransform.y, gBoxTransform.z);
+		guMtxRotAxisDeg(model, &ZAxis, gBoxTransform.angle);
+		guMtxTransApply(model, model, gBoxTransform.position.x, gBoxTransform.position.y, gBoxTransform.position.z);
 		guMtxConcat(gMatrices.view, model, modelView);
 		GX_LoadPosMtxImm(modelView, GX_PNMTX0);
 		
-		GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 3);
-			DRAW_TRIANGLE(gTriangle);
-		GX_End();
+		DRAW_TRIANGLE(gTriangle);
 		
 		GX_DrawDone();
 		
