@@ -1,0 +1,1 @@
+<Project name="SuperMarioShooter"><MagicFolder excludeFolders="CVS;.svn" filter="*.c;*.cpp;*.h" name="source" path="source\"><File path="main.c"></File></MagicFolder><Folder name="include"><File path="include\structs.h"></File></Folder><File path="Makefile"></File></Project>
