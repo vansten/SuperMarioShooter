@@ -7,29 +7,51 @@
 #include "utility.h"
 #include "colors.h"
 
+#include "textures_tpl.h"
+#include "textures.h"
+
 //DEFINES
 #define VERTEX_POS(v) GX_Position3f32(v.x, v.y, v.z);
 #define VERTEX_COL(c) GX_Color4u8(c.r, c.g, c.b, c.a);
+#define VERTEX_UV(uv) GX_TexCoord2f32(uv.x, uv.y);
+
 #define DRAW_TRIANGLE(t)\
 GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 3); \
 VERTEX_POS(t.v1) \
-VERTEX_COL(t.c1) \
+VERTEX_COL(t.c) \
 VERTEX_POS(t.v2) \
-VERTEX_COL(t.c2) \
+VERTEX_COL(t.c) \
 VERTEX_POS(t.v3) \
-VERTEX_COL(t.c3) \
+VERTEX_COL(t.c) \
 GX_End();
 
-#define DRAW_QUAD(q) \
+#define DRAW_QUAD_COLOR(q) \
 GX_Begin(GX_QUADS, GX_VTXFMT0, 4); \
 VERTEX_POS(q.v1) \
-VERTEX_COL(q.c1) \
+VERTEX_COL(q.c)\
 VERTEX_POS(q.v2) \
-VERTEX_COL(q.c2) \
+VERTEX_COL(q.c) \
 VERTEX_POS(q.v3) \
-VERTEX_COL(q.c3) \
+VERTEX_COL(q.c) \
 VERTEX_POS(q.v4) \
-VERTEX_COL(q.c4) \
+VERTEX_COL(q.c) \
+GX_End();
+
+#define DRAW_QUAD_SPRITE(quad, sprite) \
+GX_LoadTexObj(&sprite.textureObj, GX_TEXMAP0); \
+GX_Begin(GX_QUADS, GX_VTXFMT0, 4); \
+VERTEX_POS(quad.v1) \
+VERTEX_COL(quad.c) \
+VERTEX_UV(quad.uv1) \
+VERTEX_POS(quad.v2) \
+VERTEX_COL(quad.c) \
+VERTEX_UV(quad.uv2) \
+VERTEX_POS(quad.v3) \
+VERTEX_COL(quad.c) \
+VERTEX_UV(quad.uv3) \
+VERTEX_POS(quad.v4) \
+VERTEX_COL(quad.c) \
+VERTEX_UV(quad.uv4) \
 GX_End();
 
 //STRUCTS DEFINITION
@@ -50,9 +72,7 @@ typedef struct
 	Vector v1;
 	Vector v2;
 	Vector v3;
-	Color c1;
-	Color c2;
-	Color c3;
+	Color c;
 } Triangle;
 
 typedef struct
@@ -61,64 +81,71 @@ typedef struct
 	Vector v2;
 	Vector v3;
 	Vector v4;
-	Color c1;
-	Color c2;
-	Color c3;
-	Color c4;
+	UV uv1;
+	UV uv2;
+	UV uv3;
+	UV uv4;
+	Color c;
 } Quad;
 
+typedef struct
+{
+	GXTexObj textureObj;
+} Sprite;
+
 //METHODS
-Triangle GetTriangle(Vector v1, Vector v2, Vector v3)
+Triangle GetTriangle(Vector v1, Vector v2, Vector v3, Color c)
 {
 	Triangle t;
 	t.v1 = v1;
 	t.v2 = v2;
 	t.v3 = v3;
-	
+	t.c = c;
 	return t;
 }
 
-Quad GetQuad(Vector v1, Vector v2, Vector v3, Vector v4)
+Quad GetQuad(f32 size, Color c)
 {
 	Quad q;
-	q.v1 = v1;
-	q.v2 = v2;
-	q.v3 = v3;
-	q.v4 = v4;
+	
+	f32 halfSize = 0.5f * size;
+	q.v1 = GetVector(-halfSize, halfSize, 0.0f);
+	q.v2 = GetVector(halfSize, halfSize, 0.0f);;
+	q.v3 = GetVector(halfSize, -halfSize, 0.0f);;
+	q.v4 = GetVector(-halfSize, -halfSize, 0.0f);;
+	
+	q.uv1 =	GetUV(1.0f, 0.0f);
+	q.uv2 = GetUV(0.0f, 0.0f);
+	q.uv3 = GetUV(0.0f, 1.0f);
+	q.uv4 = GetUV(1.0f, 1.0f);
+	
+	q.c = c;
+	
 	return q;
+}
+
+Sprite GetSprite(TPLFile* file, int textureID)
+{
+	Sprite s;
+	
+	TPL_GetTexture(file, textureID, &s.textureObj);
+	GX_LoadTexObj(&s.textureObj, GX_TEXMAP0);
+	
+	return s;
 }
 
 void SetTriangleColor(Triangle* t, Color c)
 {
 	if(!t) return;
 	
-	t->c1 = t->c2 = t->c3 = c;
-}
-
-void SetTriangleColors(Triangle* t, Color c1, Color c2, Color c3)
-{
-	if(!t) return;
-	
-	t->c1 = c1;
-	t->c2 = c2;
-	t->c3 = c3;
+	t->c = c;
 }
 
 void SetQuadColor(Quad* q, Color c)
 {
 	if(!q) return;
 	
-	q->c1 = q->c2 = q->c3 = q->c4 = c;
-}
-
-void SetQuadColors(Quad* q, Color c1, Color c2, Color c3, Color c4)
-{
-	if(!q) return;
-	
-	q->c1 = c1;
-	q->c2 = c2;
-	q->c3 = c3;
-	q->c4 = c4;
+	q->c = c;
 }
 
 #endif
