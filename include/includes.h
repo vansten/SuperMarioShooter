@@ -9,6 +9,7 @@
 #include "transform.h"
 #include "input.h"
 #include "graphics.h"
+#include "objects.h"
 
 //DEFINES
 #define DEFAULT_FIFO_SIZE (256 * 1024)

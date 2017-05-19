@@ -100,4 +100,15 @@ Vector VectorMulf32(Vector* v, f32 scale)
 	return *v;
 }
 
+void PrepareMatrix(Mtx* resultM, Transform* t, Mtx* view)
+{
+	if(!resultM || !t || !view) return;
+	
+	Mtx model;
+	guMtxIdentity(model);
+	guMtxRotAxisDeg(model, &ZAxis, t->angle);
+	guMtxTransApply(model, model, t->position.x, t->position.y, t->position.z);
+	guMtxConcat(*view, model, *resultM);
+}
+
 #endif

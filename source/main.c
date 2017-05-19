@@ -5,6 +5,8 @@
 
 #include "includes.h"
 
+#define PROJECTILES_COUNT 512
+
 static void* frameBuffer[2] = { NULL, NULL };
 u8 currentFB = 0;
 static GXRModeObj *rmode;
@@ -18,10 +20,16 @@ ScreenParams gScreenParams;
 Input gInput;
 Input gPrevInput;
 
-Transform gBoxTransform;
-Triangle gTriangle;
+Player gPlayer;
+Projectile gProjectiles[PROJECTILES_COUNT];
+u32 gLastAvailableProjectile;
 
-s32 gOrthoSize = 10.0f;
+s32 gOrthoSize = 30.0f;
+
+void CheckProjectiles()
+{
+	
+}
 
 void GatherInput()
 {
@@ -83,10 +91,8 @@ void Initialise()
 	GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
 	GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
 	
-	guVector cam = {0.0f, 0.0f, gOrthoSize},
-			 up = {0.0f, 1.0f, 0.0f},
-			 look = {0.0f, 0.0f, 0.0f};
-	guLookAt(gMatrices.view, &cam, &up, &look);
+	guVector cam = {0.0f, 0.0f, -gOrthoSize};
+	guLookAt(gMatrices.view, &cam, &YAxis, &ZeroVector);
 	
 	gScreenParams.width = rmode->viWidth;
 	gScreenParams.height = rmode->viHeight;
@@ -97,19 +103,30 @@ void Initialise()
 	gInput = GetInput();
 	gPrevInput = gInput;
 	
-	gBoxTransform = GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f);
-	
-	gTriangle = GetTriangle(
-							 (GetVector(0.0f, 1.0f, 0.0f)),
-							 (GetVector(-1.0f, -1.0f, 0.0f)),
-							 (GetVector(1.0f, -1.0f, 0.0f))
-							);
-							
-	SetTriangleColors(&gTriangle,
-					  CYellow,
-					  CMagenta,
-					  CCyan
-					  );
+	gPlayer = GetPlayer(GetQuad(
+						GetVector(-1.0f, 1.0f, 0.0f),
+						GetVector(1.0f, 1.0f, 0.0f),
+						GetVector(1.0f, -1.0f, 0.0f),
+						GetVector(-1.0f, -1.0f, 0.0f)
+					),
+					GetColor4f32(1.0f, 1.0f, 1.0f, 1.0f),
+					GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f),
+					15.0f, 
+					360.0f
+				);
+				
+	Quad projectileQuad = GetQuad(
+									GetVector(-0.25f, 0.25f, 0.0f),
+									GetVector(0.25f, 0.25f, 0.0f),
+									GetVector(0.25f, -0.25f, 0.0f),
+									GetVector(-0.25f, -0.25f, 0.0f)
+								 );
+	SetQuadColor(&projectileQuad, CRed);
+	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
+	{
+		gProjectiles[i] = GetProjectile(projectileQuad, false);
+	}
+	gLastAvailableProjectile = 0;
 }
 
 int main()
@@ -120,24 +137,44 @@ int main()
 	Mtx modelView;
 	
 	f32 deltaTime = 1.0f / 60.0f;
+	f32 shootProjectileTimer = 0.0f;
 	
 	while(1)
 	{
 		GatherInput();
+		
+		shootProjectileTimer += deltaTime;
+		if(BTN_PRESSED(PAD_BUTTON_A) && shootProjectileTimer > 0.1f && gLastAvailableProjectile < PROJECTILES_COUNT)
+		{
+			shootProjectileTimer = 0.0f;
+			ShootProjectile(&(gProjectiles[gLastAvailableProjectile]), &(gPlayer.transform), &(gPlayer.q), gPlayer.movementSpeed * 2.0f);
+			gLastAvailableProjectile += 1;
+		}
 		 
-		Vector dir = GetDirection(&gBoxTransform);
-		Translatev(&gBoxTransform, VectorMulf32(&dir, deltaTime * 5.0f * gInput.stickY));
-		Rotate1f32(&gBoxTransform, gInput.stickX * deltaTime * -180.0f);
+		Vector dir = GetDirection(&gPlayer.transform);
+		Translatev(&gPlayer.transform, VectorMulf32(&dir, deltaTime * gPlayer.movementSpeed * gInput.stickY));
+		Rotate1f32(&gPlayer.transform, gInput.stickX * deltaTime * gPlayer.rotateSpeed);
 		
 		GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
 	
-		guMtxIdentity(model);
-		guMtxRotAxisDeg(model, &ZAxis, gBoxTransform.angle);
-		guMtxTransApply(model, model, gBoxTransform.position.x, gBoxTransform.position.y, gBoxTransform.position.z);
-		guMtxConcat(gMatrices.view, model, modelView);
+		PrepareMatrix(&modelView, &gPlayer.transform, &gMatrices.view);
 		GX_LoadPosMtxImm(modelView, GX_PNMTX0);
 		
-		DRAW_TRIANGLE(gTriangle);
+		DRAW_QUAD(gPlayer.q);
+		
+		for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
+		{
+			if(gProjectiles[i].bEnabled)
+			{
+				Vector dir = GetDirection(&gProjectiles[i].transform);
+				Translatev(&gProjectiles[i].transform, VectorMulf32(&dir, deltaTime * gProjectiles[i].speed));
+				
+				PrepareMatrix(&modelView, &gProjectiles[i].transform, &gMatrices.view);
+				GX_LoadPosMtxImm(modelView, GX_PNMTX0);
+				
+				DRAW_QUAD(gProjectiles[i].q);
+			}
+		}
 		
 		GX_DrawDone();
 		
