@@ -81,11 +81,12 @@ typedef struct
 	Vector v2;
 	Vector v3;
 	Vector v4;
+	Color c;
 	UV uv1;
 	UV uv2;
 	UV uv3;
 	UV uv4;
-	Color c;
+	f32 size;
 } Quad;
 
 typedef struct
@@ -121,10 +122,12 @@ Quad GetQuad(f32 size, Color c)
 	
 	q.c = c;
 	
+	q.size = size;
+	
 	return q;
 }
 
-Sprite GetSprite(TPLFile* file, int textureID)
+Sprite GetSprite(TPLFile* file, s32 textureID)
 {
 	Sprite s;
 	

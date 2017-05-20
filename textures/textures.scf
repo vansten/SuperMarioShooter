@@ -1,2 +1,3 @@
-<filepath="projectiles.png" id="projectiles" colfmt=6 />
+<filepath="projectile.png" id="projectile" colfmt=6 />
 <filepath="player.png" id="player" colfmt=6 />
+<filepath="life.png" id="life" colfmt=6 />
