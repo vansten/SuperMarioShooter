@@ -2,102 +2,161 @@
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
+#include <sys/time.h>
 
 #include "includes.h"
 
 #define PROJECTILES_COUNT 50
+#define ENEMY_POOL_COUNT 30
 
+#define ENEMY_SPAWN_TIME 5.0f
+
+#define GS_MENU 0
+#define GS_GAME 1
+#define GS_GAMEOVER 2
+
+/*
+ * TODOs:
+ * Tiled background
+ * Camera movement (maybe attached to player and that's all)
+ * Add camera current position to screen extents to spawn enemies or eliminate projectiles
+ * World size constraints
+ */
+
+/*
+ * Graphics variables
+ */
 static void* frameBuffer[2] = { NULL, NULL };
 u8 currentFB = 0;
 static GXRModeObj *rmode;
-
 void* gFIFO;
-
 GXColor background = {0, 0, 0, 0xff};
 
 Matrices gMatrices;
 ScreenParams gScreenParams;
+
+/*
+ * Input variables
+ */
 Input gInput;
 Input gPrevInput;
 
+/*
+ * Gameplay variables
+ */
 Player gPlayer;
+
 Projectile gProjectiles[PROJECTILES_COUNT];
 u32 gLastAvailableProjectile;
-Life gLives[MAX_LIVES];
-
-s32 gOrthoSize = 30.0f;
 f32 gShootProjectileTimer = 0.0f;
 
-void CheckProjectiles()
+Enemy gEnemies[ENEMY_POOL_COUNT];
+f32 gEnemyTimer = 0.0f;
+
+SpriteObject gLives[MAX_LIVES];
+SpriteObject gMainMenu;
+SpriteObject gGameOver;
+
+s8 gGameState = GS_MENU;
+
+/*
+ * Forward declarations for initialization code
+ */
+void Initialise(f32 orthoSize);
+void InitGraphics(f32 orthoSize);
+
+/*
+ * Forward declarations for gameplay code
+ */
+void InitGameplay();
+void ResetGameState();
+
+void CeckProjectiles();
+bool CanMove(Player* playerPtr, Vector* inputVector);
+bool IsEnemyCloseToPlayer(Enemy* e, f32 maxDistance);
+bool IsProjectileCloseToEnemy(Projectile* p, Enemy* e, f32 maxDistance);
+u32 GetLastAvailableEnemy();
+u32 GetEnemyCloseToProjectile(Projectile* p);
+
+void UpdateMenu(f32 deltaTime);
+void UpdateGame(f32 deltaTime);
+void UpdateGameOver(f32 deltaTime);
+
+void DrawMenu(Mtx* modelView);
+void DrawGame(Mtx* modelView);
+void DrawGameOver(Mtx* modelView);
+
+/*
+ * Entry point
+ */
+int main()
 {
-	f32 xExtent = gOrthoSize * gScreenParams.width / gScreenParams.height;
-	f32 yExtent = gOrthoSize;
-	for(s32 i = 0; i < PROJECTILES_COUNT; ++i)
-	{
-		if(gProjectiles[i].bEnabled)
+	Initialise(30.0f);
+	
+	Mtx modelView;
+	f32 deltaTime = 1.0f / 60.0f;
+	
+	while(1)
+	{	
+		gPrevInput = gInput;
+		GatherInput(&gInput);
+		
+		GX_InvalidateTexAll();
+		GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+	
+		if(gGameState == GS_MENU)
 		{
-			if(gProjectiles[i].transform.position.x > (0.5f * xExtent)
-				||
-				gProjectiles[i].transform.position.x < (0.5f * -xExtent)
-				||
-				gProjectiles[i].transform.position.y > (0.5f * yExtent)
-				||
-				gProjectiles[i].transform.position.y < (0.5f * -yExtent))
-			{
-				gProjectiles[i].bEnabled = false;
-				if(gLastAvailableProjectile > i)
-				{
-					gLastAvailableProjectile = i;
-				}
-			}
+			UpdateMenu(deltaTime);
+			DrawMenu(&modelView);
+		}
+		else if(gGameState == GS_GAME)
+		{
+			UpdateGame(deltaTime);
+			DrawGame(&modelView);
+		}
+		else if(gGameState == GS_GAMEOVER)
+		{
+			UpdateGameOver(deltaTime);
+			DrawGameOver(&modelView);
+		}
+		
+		GX_DrawDone();
+		
+		currentFB ^= 1;
+		GX_CopyDisp(frameBuffer[currentFB], GX_TRUE);
+		
+		VIDEO_SetNextFramebuffer(frameBuffer[currentFB]);
+		VIDEO_Flush();
+		VIDEO_WaitVSync();
+		
+		if(BTN_RELEASED(PAD_BUTTON_START))
+		{
+			exit(0);
 		}
 	}
+ 
+	return 0;
 }
 
-bool CanMove(Player* playerPtr, Vector* inputVector)
+
+void Initialise(f32 orthoSize)
 {
-	if(!playerPtr || !inputVector) return true;
+	InitGraphics(orthoSize);
+	InitInput(&gInput);
+	gPrevInput = gInput;
 	
-	Vector newPos = playerPtr->transform.position;
-	newPos.x += inputVector->x;
-	newPos.y += inputVector->y;
-	newPos.z += inputVector->z;
-	
-	f32 xExtent = gOrthoSize * gScreenParams.width / gScreenParams.height;
-	f32 yExtent = gOrthoSize;
-	
-	return !(newPos.x > (0.5f * xExtent - playerPtr->q.size * 0.6f)
-			||
-			newPos.x < (0.5f * -xExtent + playerPtr->q.size * 0.6f)
-			||
-			newPos.y > (0.5f * yExtent - playerPtr->q.size * 0.6f)
-			||
-			newPos.y < (0.5f * -yExtent + playerPtr->q.size * 0.6f));
+	InitGameplay();
 }
 
-void GatherInput()
-{
-	static const f32 stickMultiplier = 1.0f / 127.0f;
-
-	gPrevInput = gInput;		
-	
-	PAD_ScanPads();
-	
-	gInput.buttons = PAD_ButtonsHeld(0);
-	gInput.stickX = min(1.0f, PAD_StickX(0) * stickMultiplier);
-	gInput.stickY = min(1.0f, PAD_StickY(0) * stickMultiplier);
-}
-
-void Initialise()
-{
+void InitGraphics(f32 orthoSize)
+{	
 	VIDEO_Init();
-	PAD_Init();
  
 	rmode = VIDEO_GetPreferredMode(NULL);
 
 	frameBuffer[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
 	frameBuffer[1] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
- 
+	
 	VIDEO_Configure(rmode);
 	VIDEO_SetNextFramebuffer(frameBuffer[currentFB]);
 	VIDEO_SetBlack(FALSE);
@@ -149,31 +208,53 @@ void Initialise()
 	GX_SetAlphaUpdate(GX_TRUE);
 	GX_SetColorUpdate(GX_TRUE);
 	
-	guVector cam = {0.0f, 0.0f, -gOrthoSize};
+	guVector cam = {0.0f, 0.0f, -orthoSize};
 	guLookAt(gMatrices.view, &cam, &YAxis, &ZeroVector);
 	
 	gScreenParams.width = rmode->viWidth;
 	gScreenParams.height = rmode->viHeight;
 	f32 aspectRatio = (f32)gScreenParams.width / (f32)gScreenParams.height;
-	guOrtho(gMatrices.projection, gOrthoSize / 2, -gOrthoSize / 2, aspectRatio * -gOrthoSize / 2, aspectRatio * gOrthoSize / 2, 0.1f, 300.0f);
+	gScreenParams.orthoSize = orthoSize;
+	gScreenParams.xExtent = orthoSize * aspectRatio;
+	gScreenParams.yExtent = orthoSize;
+	
+	guOrtho(gMatrices.projection, orthoSize / 2, -orthoSize / 2, aspectRatio * -orthoSize / 2, aspectRatio * orthoSize / 2, 0.1f, 300.0f);
 	GX_LoadProjectionMtx(gMatrices.projection, GX_ORTHOGRAPHIC);
-	
-	gInput = GetInput();
-	gPrevInput = gInput;
-	
+		
 	GX_InvalidateTexAll();
+}
+
+/************************************************************************
+ * GAMEPLAY CODE
+ */
+void InitGameplay()
+{
 	TPLFile tplFile;
 	TPL_OpenTPLFromMemory(&tplFile, (void*)textures_tpl, textures_tpl_size);
+	
+	Quad spriteObjectQuad = GetQuad(10.0f, CWhite);
+	gMainMenu = GetSpriteObject(spriteObjectQuad,
+								&tplFile,
+								mainmenu,
+								GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f)
+								);
+								
+	
+	gGameOver = GetSpriteObject(spriteObjectQuad,
+								&tplFile,
+								gameover,
+								GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f)
+								);
 	
 	gPlayer = GetPlayer(GetQuad(2.5f, CWhite),
 						&tplFile,
 						player,
 						GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f),
-						15.0f, 
-						360.0f
+						3.0f, 
+						60.0f
 						);
 				
-	Quad projectileQuad = GetQuad(0.5f, CWhite);
+	Quad projectileQuad = GetQuad(1.0f, CWhite);
 	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
 	{
 		gProjectiles[i] = GetProjectile(projectileQuad, 
@@ -185,33 +266,145 @@ void Initialise()
 	gLastAvailableProjectile = 0;
 	
 	Quad lifeQuad = GetQuad(1.0f, CRed);
-	f32 y = gOrthoSize * 0.5f - lifeQuad.size - 0.25f;
-	f32 initX = gOrthoSize * gScreenParams.width / gScreenParams.height * 0.5f - lifeQuad.size;
+	f32 y = gScreenParams.yExtent * 0.5f - lifeQuad.size - 0.25f;
+	f32 initX = gScreenParams.xExtent * 0.5f - lifeQuad.size;
 	f32 xOffset = -lifeQuad.size;
 	for(u32 i = 0; i < MAX_LIVES; ++i)
 	{
-		gLives[i] = GetLife(lifeQuad,
-							&tplFile,
-							life,
-							GetTransform4f32(initX + xOffset * i, y, 0.0f, 0.0f)
-							);
+		gLives[i] = GetSpriteObject(lifeQuad,
+									&tplFile,
+									life,
+									GetTransform4f32(initX + xOffset * i, y, 0.0f, 0.0f)
+									);
 	}
+	
+	Quad enemyQuad = GetQuad(3.0f, CRed);
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		gEnemies[i] = GetEnemy(enemyQuad,
+								&tplFile,
+								enemy,
+								GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f),
+								1.0f
+								);
+	}
+	
+	srand(time(0));
 }
 
-void Update(float deltaTime)
-{ 
-	//Update projectiles
+void ResetGameState()
+{
+	ResetPlayer(&gPlayer);
+	
 	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
+	{
+		gProjectiles[i].bEnabled = false;
+	}
+	
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		gEnemies[i].bEnabled = false;
+	}
+	
+	gLastAvailableProjectile = 0;
+	gShootProjectileTimer = 0.0f;
+	gEnemyTimer = 0.0f;
+}
+ 
+void CheckProjectiles()
+{
+	for(s32 i = 0; i < PROJECTILES_COUNT; ++i)
 	{
 		if(gProjectiles[i].bEnabled)
 		{
-			Vector dir = GetDirection(&gProjectiles[i].transform);
-			Translatev(&gProjectiles[i].transform, VectorMulf32(&dir, deltaTime * gProjectiles[i].speed));
+			if(gProjectiles[i].transform.position.x > (0.5f * gScreenParams.xExtent)
+				||
+				gProjectiles[i].transform.position.x < (-0.5f * gScreenParams.xExtent)
+				||
+				gProjectiles[i].transform.position.y > (0.5f * gScreenParams.yExtent)
+				||
+				gProjectiles[i].transform.position.y < (-0.5f * gScreenParams.yExtent))
+			{
+				gProjectiles[i].bEnabled = false;
+				if(gLastAvailableProjectile > i)
+				{
+					gLastAvailableProjectile = i;
+				}
+			}
 		}
 	}
-		
-	CheckProjectiles();
+}
+
+bool CanMove(Player* playerPtr, Vector* inputVector)
+{
+	if(!playerPtr || !inputVector) return true;
 	
+	Vector newPos = playerPtr->transform.position;
+	newPos.x += inputVector->x;
+	newPos.y += inputVector->y;
+	newPos.z += inputVector->z;
+	
+	return !(newPos.x > (0.5f * gScreenParams.xExtent - playerPtr->q.size * 0.6f)
+			||
+			newPos.x < (-0.5f * gScreenParams.xExtent + playerPtr->q.size * 0.6f)
+			||
+			newPos.y > (0.5f * gScreenParams.yExtent - playerPtr->q.size * 0.6f)
+			||
+			newPos.y < (-0.5f * gScreenParams.yExtent + playerPtr->q.size * 0.6f));
+}
+
+bool IsEnemyCloseToPlayer(Enemy* e, f32 maxDistance)
+{
+	if(!e) return false;
+	
+	Vector diff = VectorSub(&(e->transform.position), &(gPlayer.transform.position));
+	f32 distance = VectorLength(&diff);
+	
+	return distance < maxDistance;
+}
+
+bool IsProjectileCloseToEnemy(Projectile* p, Enemy* e, f32 maxDistance)
+{
+	if(!p || !e) return false;
+	
+	Vector diff = VectorSub(&(e->transform.position), &(p->transform.position));
+	f32 distance = VectorLength(&diff);
+	
+	return distance < maxDistance;
+}
+
+u32 GetLastAvailableEnemy()
+{
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		if(!gEnemies[i].bEnabled)
+		{
+			return i;
+		}
+	}
+	
+	return (u32) - 1;
+}
+
+u32 GetEnemyCloseToProjectile(Projectile* p)
+{
+	if(!p) return (u32) - 1;
+
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		if(gEnemies[i].bEnabled)
+		{
+			if(IsProjectileCloseToEnemy(p, &gEnemies[i], gEnemies[i].q.size * 0.5f))
+			{
+				return i;
+			}
+		}
+	}
+	return (u32) - 1;
+}
+
+void UpdateGame(f32 deltaTime)
+{
 	//Update player
 	Vector dir = GetDirection(&gPlayer.transform);
 	dir = VectorMulf32(&dir, deltaTime * gPlayer.movementSpeed * gInput.stickY);
@@ -221,6 +414,49 @@ void Update(float deltaTime)
 	}
 	Rotate1f32(&gPlayer.transform, gInput.stickX * deltaTime * gPlayer.rotateSpeed);
 	
+	//Update projectiles
+	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
+	{
+		if(gProjectiles[i].bEnabled)
+		{
+			Vector dir = GetDirection(&gProjectiles[i].transform);
+			Translatev(&gProjectiles[i].transform, VectorMulf32(&dir, deltaTime * gProjectiles[i].speed));
+			u32 hitEnemy = GetEnemyCloseToProjectile(&gProjectiles[i]);
+			if(hitEnemy < ENEMY_POOL_COUNT)
+			{
+				gEnemies[hitEnemy].bEnabled = false;
+			}
+		}
+	}
+		
+	CheckProjectiles();
+	
+	//Update enemy timer
+	gEnemyTimer += deltaTime;
+	u32 lastAvailableEnemy = GetLastAvailableEnemy();
+	if(gEnemyTimer > ENEMY_SPAWN_TIME && lastAvailableEnemy < ENEMY_POOL_COUNT)
+	{
+		SpawnEnemyRandom(&(gEnemies[lastAvailableEnemy]), gScreenParams.xExtent, gScreenParams.yExtent);
+		gEnemyTimer = 0.0f;
+	}
+	
+	//Update enemies
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		if(gEnemies[i].bEnabled)
+		{
+			SetEnemyDirection(&(gEnemies[i].transform), &(gPlayer.transform));
+			Vector dir = GetDirection(&gEnemies[i].transform);
+			Translatev(&gEnemies[i].transform, VectorMulf32(&dir, gEnemies[i].movementSpeed * deltaTime));
+			
+			if(IsEnemyCloseToPlayer(&gEnemies[i], gPlayer.q.size * 0.5f))
+			{
+				gPlayer.lives -= 1;
+				gEnemies[i].bEnabled = false;
+			}
+		}
+	}
+	
 	//Update shooting projectiles
 	gShootProjectileTimer += deltaTime;
 	if(BTN_PRESSED(PAD_BUTTON_A) && gShootProjectileTimer > 0.1f && gLastAvailableProjectile < PROJECTILES_COUNT)
@@ -229,67 +465,79 @@ void Update(float deltaTime)
 		ShootProjectile(&(gProjectiles[gLastAvailableProjectile]), &(gPlayer.transform), &(gPlayer.q), gPlayer.movementSpeed * 2.0f);
 		gLastAvailableProjectile += 1;
 	}
+	
+	//Should player be dead already?
+	if(gPlayer.lives <= 0)
+	{
+		gGameState = GS_GAMEOVER;
+		ResetGameState();
+	}
 }
 
-int main()
+void UpdateMenu(f32 deltaTime)
 {
-	Initialise();
-	
-	Mtx modelView;
-	
-	f32 deltaTime = 1.0f / 60.0f;
-	
-	while(1)
+	if(BTN_PRESSED(PAD_BUTTON_A))
 	{
-		GatherInput();
-		
-		Update(deltaTime);
-		
-		//Temporary
-		if(BTN_PRESSED(PAD_BUTTON_B))
-		{
-			gPlayer.lives -= 1;
-		}
-		
-		GX_InvalidateTexAll();
-		GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+		ResetPlayer(&gPlayer);
+		gGameState = GS_GAME;
+	}
+}
+
+void UpdateGameOver(f32 deltaTime)
+{
 	
-		PrepareMatrix(&modelView, &gPlayer.transform, &gMatrices.view);
-		GX_LoadPosMtxImm(modelView, GX_PNMTX0);
-		
-		DRAW_QUAD_SPRITE(gPlayer.q, gPlayer.sprite);
-		
-		for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
-		{
-			if(gProjectiles[i].bEnabled)
-			{	
-				PrepareMatrix(&modelView, &gProjectiles[i].transform, &gMatrices.view);
-				GX_LoadPosMtxImm(modelView, GX_PNMTX0);
-				DRAW_QUAD_SPRITE(gProjectiles[i].q, gProjectiles[i].sprite);
-			}
-		}
-		
-		for(u32 i = 0; i < gPlayer.lives; ++i)
-		{
-			PrepareMatrix(&modelView, &gLives[i].transform, &gMatrices.view);
-				GX_LoadPosMtxImm(modelView, GX_PNMTX0);
-				DRAW_QUAD_SPRITE(gLives[i].q, gLives[i].sprite);
-		}
-		
-		GX_DrawDone();
-		
-		currentFB ^= 1;
-		GX_CopyDisp(frameBuffer[currentFB], GX_TRUE);
-		
-		VIDEO_SetNextFramebuffer(frameBuffer[currentFB]);
-		VIDEO_Flush();
-		VIDEO_WaitVSync();
-		
-		if(BTN_RELEASED(PAD_BUTTON_START))
-		{
-			exit(0);
+	if(BTN_PRESSED(PAD_BUTTON_A))
+	{
+		gGameState = GS_MENU;
+	}
+}
+
+void DrawGame(Mtx* modelView)
+{
+	if(!modelView) return;
+	
+	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
+	{
+		if(gProjectiles[i].bEnabled)
+		{	
+			PrepareMatrix(modelView, &gProjectiles[i].transform, &gMatrices.view);
+			GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+			DRAW_QUAD_SPRITE(gProjectiles[i].q, gProjectiles[i].sprite);
 		}
 	}
- 
-	return 0;
+	
+	for(u32 i = 0; i < ENEMY_POOL_COUNT; ++i)
+	{
+		if(gEnemies[i].bEnabled)
+		{	
+			PrepareMatrix(modelView, &gEnemies[i].transform, &gMatrices.view);
+			GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+			DRAW_QUAD_SPRITE(gEnemies[i].q, gEnemies[i].sprite);
+		}
+	}
+	
+	for(u32 i = 0; i < gPlayer.lives; ++i)
+	{
+		PrepareMatrix(modelView, &gLives[i].transform, &gMatrices.view);
+		GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+		DRAW_QUAD_SPRITE(gLives[i].q, gLives[i].sprite);
+	}
+	
+	PrepareMatrix(modelView, &gPlayer.transform, &gMatrices.view);
+	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+	DRAW_QUAD_SPRITE(gPlayer.q, gPlayer.sprite);
+}
+
+void DrawMenu(Mtx* modelView)
+{
+	PrepareMatrix(modelView, &gMainMenu.transform, &gMatrices.view);
+	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+	DRAW_QUAD_SPRITE(gMainMenu.q, gMainMenu.sprite);	
+}
+
+void DrawGameOver(Mtx* modelView)
+{
+	PrepareMatrix(modelView, &gGameOver.transform, &gMatrices.view);
+	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+	DRAW_QUAD_SPRITE(gGameOver.q, gGameOver.sprite);	
 }

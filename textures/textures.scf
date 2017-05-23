@@ -1,3 +1,6 @@
 <filepath="projectile.png" id="projectile" colfmt=6 />
 <filepath="player.png" id="player" colfmt=6 />
 <filepath="life.png" id="life" colfmt=6 />
+<filepath="enemy.png" id="enemy" colfmt=6 />
+<filepath="mainmenu.png" id="mainmenu" colfmt=6 />
+<filepath="gameover.png" id="gameover" colfmt=6 />

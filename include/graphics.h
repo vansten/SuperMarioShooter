@@ -59,6 +59,9 @@ typedef struct
 {
 	u16 width;
 	u16 height;
+	f32 orthoSize;
+	f32 xExtent;
+	f32 yExtent;
 } ScreenParams;
 
 typedef struct

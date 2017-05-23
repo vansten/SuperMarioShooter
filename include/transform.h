@@ -100,6 +100,45 @@ Vector VectorMulf32(Vector* v, f32 scale)
 	return *v;
 }
 
+Vector VectorSub(Vector* v1, Vector* v2)
+{
+	if(!v1 || !v2) return ZeroVector;
+	
+	Vector v;
+	v.x = v1->x - v2->x;
+	v.y = v1->y - v2->y;
+	v.z = v1->z - v2->z;
+	
+	return v;
+}
+
+void VectorNormalize(Vector* v)
+{
+	if(!v) return;
+	f32 length = sqrt(v->x * v->x + v->y * v->y + v->z * v->z);
+	if(abs(length) < 0.000001f)
+	{
+		return;
+	}
+	v->x /= length;
+	v->y /= length;
+	v->z /= length;
+}
+
+f32 VectorLength(Vector* v)
+{
+	if(!v) return 0.0f;
+	
+	return sqrt(v->x * v->x + v->y * v->y + v->z * v->z);
+}
+
+f32 VectorDot(Vector* v1, Vector* v2)
+{
+	if(!v1 || !v2) return 0.0f;
+	
+	return v1->x * v2->x + v1->y * v2->y + v1->z * v2->z;
+}
+
 void PrepareMatrix(Mtx* resultM, Transform* t, Mtx* view)
 {
 	if(!resultM || !t || !view) return;
