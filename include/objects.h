@@ -14,6 +14,22 @@
 
 typedef struct
 {
+	Transform transform;
+	f32 zOffsetToPlayer;
+} Camera;
+
+typedef struct
+{
+	f32 xMin;
+	f32 xMax;
+	f32 yMin;
+	f32 yMax;
+	Vector minCameraPosition;
+	Vector maxCameraPosition;
+} World;
+
+typedef struct
+{
 	Quad q;
 	Sprite sprite;
 	Transform transform;
@@ -46,6 +62,31 @@ typedef struct
 	f32 movementSpeed;
 	bool bEnabled;
 } Enemy;
+
+Camera GetCamera(Transform t, f32 offset)
+{
+	Camera c;
+	
+	c.transform = t;
+	c.zOffsetToPlayer = offset;
+	c.transform.position.z = offset;
+	
+	return c;
+}
+
+World GetWorld(f32 xMin, f32 xMax, f32 yMin, f32 yMax, f32 xExtent, f32 yExtent)
+{
+	World w;
+	w.xMin = xMin;
+	w.xMax = xMax;
+	w.yMin = yMin;
+	w.yMax = yMax;
+	
+	w.minCameraPosition = GetVector(xMin + xExtent * 0.5f, yMin + yExtent * 0.5f, 0.0f);
+	w.maxCameraPosition = GetVector(xMax - xExtent * 0.5f, yMax - yExtent * 0.5f, 0.0f);
+	
+	return w;
+}
 
 Player GetPlayer(Quad q, TPLFile* file, s32 textureID, Transform t, f32 movementSpeed, f32 rotateSpeed)
 {

@@ -125,6 +125,15 @@ void VectorNormalize(Vector* v)
 	v->z /= length;
 }
 
+void VectorClamp(Vector* vectorToClamp, Vector* minVector, Vector* maxVector)
+{
+	if(!vectorToClamp || !minVector || !maxVector) return;
+	
+	vectorToClamp->x = min(max(minVector->x, vectorToClamp->x), maxVector->x);
+	vectorToClamp->y = min(max(minVector->y, vectorToClamp->y), maxVector->y);
+	vectorToClamp->z = min(max(minVector->z, vectorToClamp->z), maxVector->z);
+}
+
 f32 VectorLength(Vector* v)
 {
 	if(!v) return 0.0f;

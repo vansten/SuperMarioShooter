@@ -67,6 +67,7 @@ typedef struct
 typedef struct
 {
 	Mtx view;
+	Mtx viewGUI;
 	Mtx44 projection;
 } Matrices;
 

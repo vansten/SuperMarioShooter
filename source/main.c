@@ -16,14 +16,6 @@
 #define GS_GAMEOVER 2
 
 /*
- * TODOs:
- * Tiled background
- * Camera movement (maybe attached to player and that's all)
- * Add camera current position to screen extents to spawn enemies or eliminate projectiles
- * World size constraints
- */
-
-/*
  * Graphics variables
  */
 static void* frameBuffer[2] = { NULL, NULL };
@@ -44,6 +36,9 @@ Input gPrevInput;
 /*
  * Gameplay variables
  */
+Camera gCamera;
+World gWorld;
+ 
 Player gPlayer;
 
 Projectile gProjectiles[PROJECTILES_COUNT];
@@ -53,6 +48,7 @@ f32 gShootProjectileTimer = 0.0f;
 Enemy gEnemies[ENEMY_POOL_COUNT];
 f32 gEnemyTimer = 0.0f;
 
+SpriteObject gFloors[64];
 SpriteObject gLives[MAX_LIVES];
 SpriteObject gMainMenu;
 SpriteObject gGameOver;
@@ -208,9 +204,6 @@ void InitGraphics(f32 orthoSize)
 	GX_SetAlphaUpdate(GX_TRUE);
 	GX_SetColorUpdate(GX_TRUE);
 	
-	guVector cam = {0.0f, 0.0f, -orthoSize};
-	guLookAt(gMatrices.view, &cam, &YAxis, &ZeroVector);
-	
 	gScreenParams.width = rmode->viWidth;
 	gScreenParams.height = rmode->viHeight;
 	f32 aspectRatio = (f32)gScreenParams.width / (f32)gScreenParams.height;
@@ -289,6 +282,31 @@ void InitGameplay()
 								);
 	}
 	
+	gCamera = GetCamera(GetTransform4f32(0.0f, 0.0f, 0.0f, 0.0f),
+						-gScreenParams.orthoSize
+						);
+	
+	guLookAt(gMatrices.view, &gCamera.transform.position, &YAxis, &ZeroVector);
+	guLookAt(gMatrices.viewGUI, &gCamera.transform.position, &YAxis, &ZeroVector);
+	
+	Quad floorQuad = GetQuad(20.0f, CWhite);
+	f32 offset = floorQuad.size;
+	initX = -4 * offset;
+	f32 initY = -4 * offset;
+	for(u32 i = 0; i < 8; ++i)
+	{
+		for(int j = 0; j < 8; ++j)
+		{
+			gFloors[i * 8 + j] = GetSpriteObject(floorQuad,
+												  &tplFile,
+												  floor,
+												  GetTransform4f32(initX + i * offset, initY + j * offset, 0.0f, 0.0f)
+												  );
+		}
+	}
+	
+	gWorld = GetWorld(-floorQuad.size * 4.5f, floorQuad.size * 3.5f, -floorQuad.size * 4.5f, floorQuad.size * 3.5f, gScreenParams.xExtent, gScreenParams.yExtent);
+	
 	srand(time(0));
 }
 
@@ -317,13 +335,13 @@ void CheckProjectiles()
 	{
 		if(gProjectiles[i].bEnabled)
 		{
-			if(gProjectiles[i].transform.position.x > (0.5f * gScreenParams.xExtent)
+			if(gProjectiles[i].transform.position.x > (0.5f * gScreenParams.xExtent + gCamera.transform.position.x)
 				||
-				gProjectiles[i].transform.position.x < (-0.5f * gScreenParams.xExtent)
+				gProjectiles[i].transform.position.x < (-0.5f * gScreenParams.xExtent + gCamera.transform.position.x)
 				||
-				gProjectiles[i].transform.position.y > (0.5f * gScreenParams.yExtent)
+				gProjectiles[i].transform.position.y > (0.5f * gScreenParams.yExtent + gCamera.transform.position.y)
 				||
-				gProjectiles[i].transform.position.y < (-0.5f * gScreenParams.yExtent))
+				gProjectiles[i].transform.position.y < (-0.5f * gScreenParams.yExtent + gCamera.transform.position.y))
 			{
 				gProjectiles[i].bEnabled = false;
 				if(gLastAvailableProjectile > i)
@@ -344,13 +362,13 @@ bool CanMove(Player* playerPtr, Vector* inputVector)
 	newPos.y += inputVector->y;
 	newPos.z += inputVector->z;
 	
-	return !(newPos.x > (0.5f * gScreenParams.xExtent - playerPtr->q.size * 0.6f)
+	return !(newPos.x > (gWorld.xMax - playerPtr->q.size * 0.5f)
 			||
-			newPos.x < (-0.5f * gScreenParams.xExtent + playerPtr->q.size * 0.6f)
+			newPos.x < (gWorld.xMin + playerPtr->q.size * 0.5f)
 			||
-			newPos.y > (0.5f * gScreenParams.yExtent - playerPtr->q.size * 0.6f)
+			newPos.y > (gWorld.yMax - playerPtr->q.size * 0.5f)
 			||
-			newPos.y < (-0.5f * gScreenParams.yExtent + playerPtr->q.size * 0.6f));
+			newPos.y < (gWorld.yMin + playerPtr->q.size * 0.5f));
 }
 
 bool IsEnemyCloseToPlayer(Enemy* e, f32 maxDistance)
@@ -414,6 +432,17 @@ void UpdateGame(f32 deltaTime)
 	}
 	Rotate1f32(&gPlayer.transform, gInput.stickX * deltaTime * gPlayer.rotateSpeed);
 	
+	//Update camera
+	gCamera.transform.position = gPlayer.transform.position;
+	//gCamera.transform.position.x = max(min(gCamera.transform.position.x, gWorld.maxCameraPosition.x), gWorld.minCameraPosition.x);
+	//gCamera.transform.position.y = max(min(gCamera.transform.position.y, gWorld.maxCameraPosition.y), gWorld.minCameraPosition.y);
+	VectorClamp(&gCamera.transform.position, &gWorld.minCameraPosition, &gWorld.maxCameraPosition);
+	gCamera.transform.position.z = gCamera.zOffsetToPlayer;
+	guMtxIdentity(gMatrices.view);
+	Vector lookAt = gCamera.transform.position;
+	lookAt.z += 1.0f;
+	guLookAt(gMatrices.view, &gCamera.transform.position, &YAxis, &lookAt);
+	
 	//Update projectiles
 	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
 	{
@@ -436,7 +465,7 @@ void UpdateGame(f32 deltaTime)
 	u32 lastAvailableEnemy = GetLastAvailableEnemy();
 	if(gEnemyTimer > ENEMY_SPAWN_TIME && lastAvailableEnemy < ENEMY_POOL_COUNT)
 	{
-		SpawnEnemyRandom(&(gEnemies[lastAvailableEnemy]), gScreenParams.xExtent, gScreenParams.yExtent);
+		SpawnEnemyRandom(&(gEnemies[lastAvailableEnemy]), gScreenParams.xExtent + gCamera.transform.position.x, gScreenParams.yExtent + gCamera.transform.position.y);
 		gEnemyTimer = 0.0f;
 	}
 	
@@ -496,6 +525,13 @@ void DrawGame(Mtx* modelView)
 {
 	if(!modelView) return;
 	
+	for(u32 i = 0; i < 64; ++i)
+	{
+		PrepareMatrix(modelView, &gFloors[i].transform, &gMatrices.view);
+		GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+		DRAW_QUAD_SPRITE(gFloors[i].q, gFloors[i].sprite);
+	}
+	
 	for(u32 i = 0; i < PROJECTILES_COUNT; ++i)
 	{
 		if(gProjectiles[i].bEnabled)
@@ -516,28 +552,31 @@ void DrawGame(Mtx* modelView)
 		}
 	}
 	
-	for(u32 i = 0; i < gPlayer.lives; ++i)
-	{
-		PrepareMatrix(modelView, &gLives[i].transform, &gMatrices.view);
-		GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
-		DRAW_QUAD_SPRITE(gLives[i].q, gLives[i].sprite);
-	}
-	
 	PrepareMatrix(modelView, &gPlayer.transform, &gMatrices.view);
 	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
 	DRAW_QUAD_SPRITE(gPlayer.q, gPlayer.sprite);
+	
+	Mtx identity;
+	guMtxIdentity(identity);
+	
+	for(u32 i = 0; i < gPlayer.lives; ++i)
+	{
+		PrepareMatrix(modelView, &gLives[i].transform, &gMatrices.viewGUI);
+		GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
+		DRAW_QUAD_SPRITE(gLives[i].q, gLives[i].sprite);
+	}
 }
 
 void DrawMenu(Mtx* modelView)
 {
-	PrepareMatrix(modelView, &gMainMenu.transform, &gMatrices.view);
+	PrepareMatrix(modelView, &gMainMenu.transform, &gMatrices.viewGUI);
 	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
 	DRAW_QUAD_SPRITE(gMainMenu.q, gMainMenu.sprite);	
 }
 
 void DrawGameOver(Mtx* modelView)
 {
-	PrepareMatrix(modelView, &gGameOver.transform, &gMatrices.view);
+	PrepareMatrix(modelView, &gGameOver.transform, &gMatrices.viewGUI);
 	GX_LoadPosMtxImm(*modelView, GX_PNMTX0);
 	DRAW_QUAD_SPRITE(gGameOver.q, gGameOver.sprite);	
 }
