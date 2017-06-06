@@ -164,21 +164,21 @@ void SpawnEnemyRandom(Enemy* e, f32 xExtent, f32 yExtent)
 	if(side == PLUS_X)
 	{
 		x = e->q.size + xExtent * 0.5f;
-		y = -yExtent * (0.5f + randomValue);
+		y = yExtent * (-0.5f + randomValue);
 	}
 	else if(side == MINUS_X)
 	{
 		x = -e->q.size - xExtent * 0.5f;
-		y = -yExtent * (0.5f + randomValue);
+		y = yExtent * (-0.5f + randomValue);
 	}
 	else if(side == PLUS_Y)
 	{
-		x = -xExtent * (0.5f + randomValue);
+		x = xExtent * (-0.5f + randomValue);
 		y = e->q.size + yExtent * 0.5f;
 	}
 	else if(side == MINUS_Y)
 	{
-		x = -xExtent * (0.5f + randomValue);
+		x = xExtent * (-0.5f + randomValue);
 		y = -e->q.size - yExtent * 0.5f;
 	}
 	else
